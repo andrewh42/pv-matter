@@ -1,0 +1,17 @@
+# Rust builds
+/target
+
+# Packaging output (packaging/build-aarch64.sh)
+/dist
+
+# Generated libdns_sd cross-link shim (packaging/build-aarch64.sh). The copied
+# aarch64 lib (libdns_sd.so.1.0.0) is tracked; these two are regenerated.
+/packaging/libdns_sd.so
+/packaging/avahi-compat-libdns_sd.pc
+
+# Local credentials.
+.env
+
+/*.json
+*.log
+.*.swp

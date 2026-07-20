@@ -1,0 +1,39 @@
+[Unit]
+Description=PV inverter MQTT -> Matter Solar Power bridge
+Documentation=https://github.com/andrewherbert/pv-matter
+# Needs the network, the Avahi daemon (mDNS over D-Bus) and (normally) the
+# co-located broker that sma-daemon publishes to.
+After=network-online.target avahi-daemon.service mosquitto.service
+Wants=network-online.target avahi-daemon.service mosquitto.service
+
+# The -run wrapper (ExecStart below) owns the restart backoff, so disable
+# systemd's own start-rate limiter — otherwise it would give up during a long
+# outage (e.g. the broker being down).
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/pv-matter-run
+
+# PV_MQTT_HOST (+ optional overrides). install.sh creates this file (0600,
+# root) by prompting; KEY=VALUE lines, no `export`.
+EnvironmentFile=/etc/pv-matter/config.env
+
+DynamicUser=yes
+
+# Persistent state: the Matter fabric (commissioning survives restarts).
+# Resolves to /var/lib/pv-matter.
+StateDirectory=pv-matter
+Environment=PV_STORAGE_PATH=/var/lib/pv-matter
+
+# Fatal exits (bad config) stop the unit; anything else exits non-zero and is
+# restarted through the wrapper's progressive backoff.
+Restart=on-failure
+RestartSec=0
+TimeoutStartSec=60
+
+# Default log level; override with a RUST_LOG= line in the EnvironmentFile.
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=multi-user.target

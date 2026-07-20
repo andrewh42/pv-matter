@@ -1,0 +1,51 @@
+#!/bin/sh
+# ExecStart wrapper implementing progressive restart backoff.
+#
+# The target's systemd predates native RestartSteps/RestartMaxDelaySec, so the
+# unit can't express exponential backoff. This wrapper does it: on each
+# consecutive short-lived failure the wait before the next start doubles —
+# 15s, 30s, 60s, ... capped at 3600s. A run that stays up >= HEALTHY_SECS is
+# treated as recovered and resets the backoff.
+#
+# Type=simple marks the service active as soon as this script forks, so the
+# `sleep` here is not gated by TimeoutStartSec. The unit sets RestartSec=0 and
+# StartLimitIntervalSec=0 so this wrapper owns all timing. We `exec` the binary
+# so systemd's SIGTERM on stop reaches the daemon directly (graceful Matter
+# shutdown).
+set -eu
+
+BIN=/usr/local/sbin/pv-matter
+STATE="${STATE_DIRECTORY:-/var/lib/pv-matter}"
+COUNT_FILE="${STATE}/.restart-count"
+START_FILE="${STATE}/.last-start"
+BASE_SECS=15
+MAX_SECS=3600
+HEALTHY_SECS=300
+
+now="$(date +%s)"
+count="$(cat "${COUNT_FILE}" 2>/dev/null || echo 0)"
+last="$(cat "${START_FILE}" 2>/dev/null || echo 0)"
+
+if [ "${last}" -ne 0 ] && [ "$((now - last))" -ge "${HEALTHY_SECS}" ]; then
+  count=0
+fi
+
+if [ "${count}" -gt 0 ]; then
+  delay="${BASE_SECS}"
+  i=1
+  while [ "${i}" -lt "${count}" ]; do
+    delay="$((delay * 2))"
+    if [ "${delay}" -ge "${MAX_SECS}" ]; then
+      delay="${MAX_SECS}"
+      break
+    fi
+    i="$((i + 1))"
+  done
+  echo "restart backoff: waiting ${delay}s before start (consecutive failure #${count})"
+  sleep "${delay}"
+fi
+
+echo "$((count + 1))" >"${COUNT_FILE}"
+date +%s >"${START_FILE}"
+
+exec "${BIN}"

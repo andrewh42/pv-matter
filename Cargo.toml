@@ -1,0 +1,51 @@
+[package]
+name = "pv-matter"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "MQTT → Matter bridge exposing an SMA PV inverter as a Matter 1.5 Solar Power device"
+
+[dependencies]
+# crates.io lags badly (0.0.0/0.1.0); pin to the active git tree plus Apple Home
+# pairing fix — the same rev d26i-matter ships with.
+#
+# mDNS uses the `astro-dnssd` (Bonjour / DNS-SD) backend on both platforms:
+# macOS links the system mDNSResponder; Linux links libdns_sd from avahi-compat
+# (pkg `libavahi-compat-libdnssd`), which speaks avahi-daemon's *legacy* D-Bus
+# API and so works with the target's Avahi 0.7. (The alternative `zbus` backend
+# talks only to the `org.freedesktop.Avahi.Server2` interface, added in Avahi
+# 0.8, which Bionic does not ship.) The C linkage this pulls in on Linux is
+# handled for the cross build by packaging/build-aarch64.sh.
+rs-matter = { git = "https://github.com/andrewh42/rs-matter", rev = "4dffc3150ca9ed73bad03d603885f41095c9c03d", features = ["astro-dnssd", "max-sessions-32", "persistent-subscriptions", "case-resumption"] }
+
+# Plain TCP to a LAN broker: default features off drops the whole TLS stack
+# (rustls/aws-lc), keeping the binary pure Rust + libc.
+rumqttc = { version = "0.25", default-features = false }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time", "sync"] }
+
+serde = { version = "1", features = ["derive"] }
+# `arbitrary_precision` keeps each SenML number's raw decimal text, so scaling
+# to Matter's milli-units is an exact digit shift, never `f64` math.
+serde_json = { version = "1", features = ["arbitrary_precision"] }
+
+# rs-matter-side plumbing (same stack as d26i-matter).
+embassy-futures = "0.1"
+# Supplies the embassy-time timer-queue symbol the final binary must link;
+# without it: "Undefined symbols: ___embassy_time_queue_item_from_waker".
+embassy-time-queue-utils = { version = "0.3", features = ["generic-queue-64"] }
+futures-lite = "2"
+async-channel = "2"
+async-io = "2"
+static_cell = "2"
+rand = "0.8"
+
+dotenvy = "0.15"
+log = "0.4"
+env_logger = "0.11"
+anyhow = "1"
+
+# Release profile for the shipped binary. Default opt-level 3 also shrinks
+# rs-matter's futures, so the rs-matter thread's stack is comfortable; `strip`
+# drops debug symbols for a smaller native binary.
+[profile.release]
+strip = true
